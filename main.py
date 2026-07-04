@@ -12,7 +12,7 @@ logging.basicConfig(
 
 def main():
     app_id = "com.spotify.music"
-    target_count = 100
+    target_count = 1000
     
     logging.info(f"Initializing Spotify Review Crawler for app: {app_id}")
     

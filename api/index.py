@@ -43,7 +43,8 @@ def call_gemini(prompt: str) -> dict:
 
 def generate_themes(query: str, context: str) -> list:
     prompt = f"""
-    You are an expert AI research assistant analyzing Spotify app reviews for a product team.
+    You are an expert AI research assistant. Your company's strategic goal is to increase meaningful music discovery and reduce repetitive listening behavior. Focus your analysis on how users experience music discovery, recommendations, and repetitiveness. Ignore reviews purely about ads, free/paid tiers, or unrelated bugs unless they tie back to discovery.
+    
     The researcher is asking the following query: "{query}"
     
     Here is a sample of recent app reviews extracted from our crawler:
@@ -76,7 +77,8 @@ def generate_themes(query: str, context: str) -> list:
 
 def generate_segments(query: str, context: str, themes: list) -> list:
     prompt = f"""
-    You are an expert user researcher defining behavioral segments.
+    You are an expert user researcher defining behavioral segments. Focus on how these segments approach music discovery, recommendations, and listening habits. Avoid segments purely based on free vs paid tier usage.
+    
     The researcher's query is: "{query}"
     
     You have access to recent app reviews:
@@ -105,7 +107,8 @@ def generate_segments(query: str, context: str, themes: list) -> list:
 
 def generate_opportunities(query: str, themes: list, segments: list) -> list:
     prompt = f"""
-    You are a strategic Product Manager.
+    You are a strategic Product Manager. Your company's goal is to increase meaningful music discovery and reduce repetitive listening behavior. Provide opportunities that specifically address these goals. Avoid opportunities related to ad frequency or subscription tier changes.
+    
     The researcher's query was: "{query}"
     
     Here are the extracted themes:
@@ -141,7 +144,12 @@ def analyze(req: QueryRequest):
     def generate_stream():
         try:
             df = pd.read_csv("spotify_reviews.csv")
-            sample_reviews = df['content'].dropna().head(200).tolist()
+            reviews = df['content'].dropna().tolist()
+            keywords = ['discovery', 'recommend', 'algorithm', 'same', 'repetitive', 'repeat', 'stale', 'fresh', 'new music', 'playlist', 'explore']
+            filtered_reviews = [r for r in reviews if any(kw in r.lower() for kw in keywords)]
+            if len(filtered_reviews) < 10:
+                filtered_reviews.extend(reviews[:50])
+            sample_reviews = filtered_reviews[:200]
         except Exception as e:
             print(f"Error reading CSV: {e}")
             sample_reviews = ["I love spotify", "The discovery is broken, keeps playing same songs."]
