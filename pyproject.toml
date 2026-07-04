@@ -1,2 +1,14 @@
+[project]
+name = "my-vercel-app"
+version = "0.1.0"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pandas",
+    "google-genai"
+]
+
+# ... keep your existing [tool.vercel] and other configs down here ...
 [tool.vercel]
 entrypoint = "api:app"
