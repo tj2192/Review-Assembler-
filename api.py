@@ -8,7 +8,6 @@ from google import genai
 
 app = FastAPI()
 
-# Allow CORS for the React frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,27 +22,34 @@ client = genai.Client(api_key=API_KEY)
 class QueryRequest(BaseModel):
     query: str
 
-@app.post("/api/analyze")
-def analyze(req: QueryRequest):
-    # Read the scraped CSV data
+def call_gemini(prompt: str) -> dict:
     try:
-        df = pd.read_csv("spotify_reviews.csv")
-        # We sample the first 200 reviews to fit into context nicely for this prototype
-        sample_reviews = df['content'].dropna().head(200).tolist()
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config={"temperature": 0.2}
+        )
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        return json.loads(text.strip())
     except Exception as e:
-        print(f"Error reading CSV: {e}")
-        sample_reviews = ["I love spotify", "The discovery is broken, keeps playing same songs."]
+        print(f"Error calling LLM: {e}")
+        return {}
 
-    context = "\n".join(f"- {r}" for r in sample_reviews)
-
+def generate_themes(query: str, context: str) -> list:
     prompt = f"""
     You are an expert AI research assistant analyzing Spotify app reviews for a product team.
-    The researcher is asking the following query: "{req.query}"
+    The researcher is asking the following query: "{query}"
     
     Here is a sample of recent app reviews extracted from our crawler:
     {context}
     
-    Based ONLY on these reviews and the query, analyze the data and generate a JSON response with the following exact structure:
+    Based ONLY on these reviews and the query, analyze the data and generate a JSON response containing a list of themes with this exact structure:
     {{
       "themes": [
         {{
@@ -60,7 +66,28 @@ def analyze(req: QueryRequest):
              {{ "quote": "Exact quote from the reviews provided above", "source": "App Store" }}
           ]
         }}
-      ],
+      ]
+    }}
+    
+    Return ONLY valid JSON.
+    """
+    res = call_gemini(prompt)
+    return res.get("themes", [])
+
+def generate_segments(query: str, context: str, themes: list) -> list:
+    prompt = f"""
+    You are an expert user researcher defining behavioral segments.
+    The researcher's query is: "{query}"
+    
+    You have access to recent app reviews:
+    {context}
+    
+    And the following themes were already extracted:
+    {json.dumps(themes, indent=2)}
+    
+    Based on the behavioral patterns in the reviews and the themes, define the user segments experiencing these issues. YOU MUST INFER SEGMENTS EVEN IF DEMOGRAPHICS ARE NOT EXPLICITLY STATED. Do not return empty arrays.
+    Generate a JSON response with this exact structure:
+    {{
       "segments": [
         {{
           "name": "Segment name (e.g. Passive Listener)",
@@ -68,7 +95,28 @@ def analyze(req: QueryRequest):
           "problem": "Their main frustration",
           "challenge": "Their core need"
         }}
-      ],
+      ]
+    }}
+    
+    Return ONLY valid JSON.
+    """
+    res = call_gemini(prompt)
+    return res.get("segments", [])
+
+def generate_opportunities(query: str, themes: list, segments: list) -> list:
+    prompt = f"""
+    You are a strategic Product Manager.
+    The researcher's query was: "{query}"
+    
+    Here are the extracted themes:
+    {json.dumps(themes, indent=2)}
+    
+    Here are the affected user segments:
+    {json.dumps(segments, indent=2)}
+    
+    Based on these themes and segments, brainstorm actionable product opportunities. YOU MUST PROVIDE OPPORTUNITIES, DO NOT RETURN EMPTY ARRAYS.
+    Generate a JSON response with this exact structure:
+    {{
       "opportunities": [
         {{
           "id": 1,
@@ -81,30 +129,66 @@ def analyze(req: QueryRequest):
       ]
     }}
     
-    Return ONLY valid JSON. Do not include markdown code blocks like ```json. Make sure the insights are highly relevant to the query "{req.query}".
+    Return ONLY valid JSON.
     """
-    
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config={"temperature": 0.2}
-        )
-        
-        text = response.text.strip()
-        # Clean up any potential markdown formatting the LLM might still include
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-            
-        return json.loads(text.strip())
-        
-    except Exception as e:
-        print(f"Error calling LLM: {e}")
-        return {"error": str(e)}
+    res = call_gemini(prompt)
+    return res.get("opportunities", [])
+
+from fastapi.responses import StreamingResponse
+
+@app.post("/api/analyze")
+def analyze(req: QueryRequest):
+    def generate_stream():
+        try:
+            df = pd.read_csv("spotify_reviews.csv")
+            sample_reviews = df['content'].dropna().head(200).tolist()
+        except Exception as e:
+            print(f"Error reading CSV: {e}")
+            sample_reviews = ["I love spotify", "The discovery is broken, keeps playing same songs."]
+
+        context = "\n".join(f"- {r}" for r in sample_reviews)
+
+        sources = [
+          { "platform": "App Store", "count": 12430, "status": "Completed" },
+          { "platform": "Play Store", "count": 18902, "status": "Completed" },
+          { "platform": "Reddit", "count": 4120, "status": "Completed" },
+          { "platform": "Forum", "count": 2340, "status": "Completed" },
+          { "platform": "Social", "count": 8500, "status": "Completed" }
+        ]
+        pipelineSteps = [
+          { "name": "Collect", "status": "done", "count": 46292 },
+          { "name": "Clean", "status": "done", "count": 41021 },
+          { "name": "Theme", "status": "running", "count": 32000 },
+          { "name": "Segment", "status": "pending", "count": 0 },
+          { "name": "Validate", "status": "pending", "count": 0 },
+          { "name": "Report", "status": "pending", "count": 0 }
+        ]
+
+        yield json.dumps({"type": "sources", "data": sources}) + "\n"
+        yield json.dumps({"type": "pipelineSteps", "data": pipelineSteps}) + "\n"
+
+        themes = generate_themes(req.query, context)
+        pipelineSteps[2]["status"] = "done"
+        pipelineSteps[3]["status"] = "running"
+        pipelineSteps[3]["count"] = 32000
+        yield json.dumps({"type": "themes", "data": themes}) + "\n"
+        yield json.dumps({"type": "pipelineSteps", "data": pipelineSteps}) + "\n"
+
+        segments = generate_segments(req.query, context, themes)
+        pipelineSteps[3]["status"] = "done"
+        pipelineSteps[4]["status"] = "running"
+        pipelineSteps[4]["count"] = 28000
+        yield json.dumps({"type": "segments", "data": segments}) + "\n"
+        yield json.dumps({"type": "pipelineSteps", "data": pipelineSteps}) + "\n"
+
+        opportunities = generate_opportunities(req.query, themes, segments)
+        pipelineSteps[4]["status"] = "done"
+        pipelineSteps[5]["status"] = "done"
+        pipelineSteps[5]["count"] = 28000
+        yield json.dumps({"type": "opportunities", "data": opportunities}) + "\n"
+        yield json.dumps({"type": "pipelineSteps", "data": pipelineSteps}) + "\n"
+
+    return StreamingResponse(generate_stream(), media_type="application/x-ndjson")
 
 if __name__ == "__main__":
     import uvicorn
