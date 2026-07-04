@@ -1,8 +1,0 @@
-[project]
-name = "my-vercel-app"
-version = "0.1.0"
-dependencies = []
-
-# ... keep your existing [tool.vercel] and other configs down here ...
-[tool.vercel]
-entrypoint = "main.py:my_cool_app"
