@@ -1,4 +1,5 @@
 {
+  "name": "review-assembler-agent",
   "functions": {
     "api/**/*.py": {
       "maxDuration": 60
