@@ -90,7 +90,7 @@ function App() {
     let finalPipeline: any[] = [];
     
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
     
     try {
       const res = await fetch('/api/analyze', {

@@ -101,7 +101,9 @@ def analyze(req: QueryRequest):
     def generate_stream():
         try:
             reviews = []
-            with open("spotify_reviews.csv", "r", encoding="utf-8") as f:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            csv_path = os.path.join(base_dir, "spotify_reviews.csv")
+            with open(csv_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if 'content' in row and row['content']:
