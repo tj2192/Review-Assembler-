@@ -1886,3 +1886,12 @@ section.block { margin-bottom: var(--space-20); scroll-margin-top: var(--space-1
   animation: spin 1s linear infinite;
 }
 
+@media print {
+  .page-break {
+    page-break-before: always;
+  }
+}
+.page-break {
+  page-break-before: always;
+}
+

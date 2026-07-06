@@ -12,6 +12,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   const [themes, setThemes] = useState<any[]>([])
   const [segments, setSegments] = useState<any[]>([])
@@ -88,11 +89,15 @@ function App() {
     let finalSources: any[] = [];
     let finalPipeline: any[] = [];
     
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+    
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery })
+        body: JSON.stringify({ query: searchQuery }),
+        signal: controller.signal
       });
       
       const reader = res.body?.getReader();
@@ -154,24 +159,38 @@ function App() {
         }, ...prev];
       });
       
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.error("Request timed out or was aborted");
+        alert("The request timed out. Please try again or check Vercel logs.");
+      } else {
+        console.error(err);
+      }
     } finally {
+      clearTimeout(timeout);
       setIsSearching(false);
     }
   };
 
   const exportPDF = () => {
-    const element = document.getElementById('export-content');
-    if (element) {
-      html2pdf().from(element).set({
-        margin: 10,
-        filename: `AI-Review-Intelligence-${searchQuery.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).save();
-    }
+    setIsExporting(true);
+    setTimeout(() => {
+      const element = document.getElementById('export-content');
+      if (element) {
+        html2pdf().from(element).set({
+          margin: 10,
+          filename: `AI-Review-Intelligence-${searchQuery.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: 'css', before: '.page-break' }
+        }).save().then(() => {
+          setIsExporting(false);
+        });
+      } else {
+        setIsExporting(false);
+      }
+    }, 100);
   };
 
   return (
@@ -446,53 +465,76 @@ function App() {
                     <div className="block-head">
                       <h2 className="h2-sp">Theme Explorer</h2>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 'var(--space-8)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    {!isExporting ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 'var(--space-8)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                          {themes.map((t, idx) => (
+                            <div 
+                              key={idx} 
+                              className="feature-card compact" 
+                              style={{ cursor: 'pointer', borderColor: idx === selectedThemeIdx ? 'var(--primary-500)' : 'var(--cream-300)', background: idx === selectedThemeIdx ? 'var(--primary-50)' : 'var(--cream-100)' }}
+                              onClick={() => setSelectedThemeIdx(idx)}
+                            >
+                              <div className="body">
+                                <div className="name">{t.title}</div>
+                                <div className="desc">{t.count} mentions</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {themes[selectedThemeIdx] && (
+                          <div className="canvas">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+                              <h3 className="h3-sp" style={{ margin: 0, color: 'var(--primary-900)' }}>{themes[selectedThemeIdx].title}</h3>
+                              <span className={`badge ${themes[selectedThemeIdx].sentiment === 'Negative' ? 'soft-coral' : 'soft-green'}`}>{themes[selectedThemeIdx].sentiment} Sentiment</span>
+                            </div>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-8)', marginBottom: 'var(--space-8)' }}>
+                              <div>
+                                <div className="cat" style={{ marginBottom: 'var(--space-2)' }}>Why this happens</div>
+                                <p className="body-md">{themes[selectedThemeIdx].why}</p>
+                              </div>
+                              <div>
+                                <div className="cat" style={{ marginBottom: 'var(--space-2)' }}>Affected Segments</div>
+                                <p className="body-md">{themes[selectedThemeIdx].segment}</p>
+                              </div>
+                            </div>
+  
+                            <div className="sub-head"><h3>Evidence Quotes</h3></div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                              {themes[selectedThemeIdx].evidence?.map((ev: any, i: number) => (
+                                <div key={i} style={{ padding: 'var(--space-5)', backgroundColor: 'var(--cream-100)', borderRadius: 'var(--radius-lg)', borderLeft: '4px solid var(--primary-300)' }}>
+                                  <p className="body-lg" style={{ fontStyle: 'italic', marginBottom: 'var(--space-2)' }}>"{ev.quote}"</p>
+                                  <span className="body-sm">— Source: {ev.source}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-12)' }}>
                         {themes.map((t, idx) => (
-                          <div 
-                            key={idx} 
-                            className="feature-card compact" 
-                            style={{ cursor: 'pointer', borderColor: idx === selectedThemeIdx ? 'var(--primary-500)' : 'var(--cream-300)', background: idx === selectedThemeIdx ? 'var(--primary-50)' : 'var(--cream-100)' }}
-                            onClick={() => setSelectedThemeIdx(idx)}
-                          >
-                            <div className="body">
-                              <div className="name">{t.title}</div>
-                              <div className="desc">{t.count} mentions</div>
+                          <div key={idx} className="page-break" style={{ padding: 'var(--space-4)', background: 'var(--white)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+                              <h3 className="h3-sp" style={{ margin: 0, color: 'var(--primary-900)' }}>{t.title}</h3>
+                              <span className={`badge ${t.sentiment === 'Negative' ? 'soft-coral' : 'soft-green'}`}>{t.sentiment} Sentiment</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-8)', marginBottom: 'var(--space-8)' }}>
+                              <div>
+                                <div className="cat" style={{ marginBottom: 'var(--space-2)' }}>Why this happens</div>
+                                <p className="body-md">{t.why}</p>
+                              </div>
+                              <div>
+                                <div className="cat" style={{ marginBottom: 'var(--space-2)' }}>Affected Segments</div>
+                                <p className="body-md">{t.segment}</p>
+                              </div>
                             </div>
                           </div>
                         ))}
                       </div>
-                      
-                      {themes[selectedThemeIdx] && (
-                        <div className="canvas">
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
-                            <h3 className="h3-sp" style={{ margin: 0, color: 'var(--primary-900)' }}>{themes[selectedThemeIdx].title}</h3>
-                            <span className={`badge ${themes[selectedThemeIdx].sentiment === 'Negative' ? 'soft-coral' : 'soft-green'}`}>{themes[selectedThemeIdx].sentiment} Sentiment</span>
-                          </div>
-                          
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-8)', marginBottom: 'var(--space-8)' }}>
-                            <div>
-                              <div className="cat" style={{ marginBottom: 'var(--space-2)' }}>Why this happens</div>
-                              <p className="body-md">{themes[selectedThemeIdx].why}</p>
-                            </div>
-                            <div>
-                              <div className="cat" style={{ marginBottom: 'var(--space-2)' }}>Affected Segments</div>
-                              <p className="body-md">{themes[selectedThemeIdx].segment}</p>
-                            </div>
-                          </div>
-
-                          <div className="sub-head"><h3>Evidence Quotes</h3></div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                            {themes[selectedThemeIdx].evidence?.map((ev: any, i: number) => (
-                              <div key={i} style={{ padding: 'var(--space-5)', backgroundColor: 'var(--cream-100)', borderRadius: 'var(--radius-lg)', borderLeft: '4px solid var(--primary-300)' }}>
-                                <p className="body-lg" style={{ fontStyle: 'italic', marginBottom: 'var(--space-2)' }}>"{ev.quote}"</p>
-                                <span className="body-sm">— Source: {ev.source}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </section>
                 )}
 
@@ -562,7 +604,31 @@ function App() {
                     </div>
                   </section>
                 )}
-              </main>
+              {/* APPENDIX SECTION (ONLY IN PDF) */}
+              {isExporting && themes.length > 0 && (
+                <section className="section-container block page-break">
+                  <div className="block-head">
+                    <h2 className="h2-sp">Appendix: Evidence Quotes</h2>
+                    <div className="hint">Direct quotes extracted from the user reviews.</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
+                    {themes.map((t, idx) => (
+                      <div key={idx}>
+                        <h3 className="h4-sp" style={{ marginBottom: 'var(--space-4)', color: 'var(--primary-800)' }}>{t.title}</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                          {t.evidence?.map((ev: any, i: number) => (
+                            <div key={i} style={{ padding: 'var(--space-5)', backgroundColor: 'var(--cream-100)', borderRadius: 'var(--radius-lg)', borderLeft: '4px solid var(--primary-300)' }}>
+                              <p className="body-lg" style={{ fontStyle: 'italic', marginBottom: 'var(--space-2)' }}>"{ev.quote}"</p>
+                              <span className="body-sm">— Source: {ev.source}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </main>
             </>
           )}
         </>
