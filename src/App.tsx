@@ -88,16 +88,11 @@ function App() {
     let finalOpportunities: any[] = [];
     let finalSources: any[] = [];
     let finalPipeline: any[] = [];
-    
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
-    
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery }),
-        signal: controller.signal
+        body: JSON.stringify({ query: searchQuery })
       });
       
       const reader = res.body?.getReader();
@@ -159,15 +154,9 @@ function App() {
         }, ...prev];
       });
       
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        console.error("Request timed out or was aborted");
-        alert("The request timed out. Please try again or check Vercel logs.");
-      } else {
-        console.error(err);
-      }
+    } catch (err) {
+      console.error(err);
     } finally {
-      clearTimeout(timeout);
       setIsSearching(false);
     }
   };
